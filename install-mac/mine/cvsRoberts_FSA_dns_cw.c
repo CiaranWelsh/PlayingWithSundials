@@ -79,9 +79,10 @@
 #define ATOL2 RCONST(1e-14)
 #define ATOL3 RCONST(1e-6)
 #define T0    RCONST(0.0)   /* initial time */
-#define T1    RCONST(0.4)   /* first output time */
+#define T1    RCONST(1)   /* first output time */
+#define STEP  1
 #define TMULT RCONST(10.0)  /* output time factor */
-#define NOUT  12            /* number of output times */
+#define NOUT  6            /* number of output times */
 
 #define NP    3             /* number of problem parameters */
 #define NS    3             /* number of sensitivities computed */
@@ -119,9 +120,9 @@ static void PrintOutput(void *cvode_mem, realtype t, N_Vector u);
 
 static void PrintOutputS(N_Vector *uS);
 
-static void PrintFinalStats(void *cvode_mem, booleantype sensi);
-
-static int check_retval(void *returnvalue, const char *funcname, int opt);
+//static void PrintFinalStats(void *cvode_mem, booleantype sensi);
+//
+//static int check_retval(void *returnvalue, const char *funcname, int opt);
 
 /*
  *--------------------------------------------------------------------
@@ -157,6 +158,7 @@ int main(int argc, char *argv[]) {
 //    sensi_meth = CV_STAGGERED;
 //    err_con = 1;
     err_con = 0;
+    sensi = 1;
 
     /* User data structure */
     data = (UserData) malloc(sizeof *data);
@@ -226,6 +228,33 @@ int main(int argc, char *argv[]) {
         if (check_retval((void *) yS, "N_VCloneVectorArray", 0)) return (1);
 //        for (is = 0; is < NS; is++) N_VConst(ZERO, yS[is]);
         setSensInitTo(yS, NS, NEQ, 0.0);
+        /**
+         * When set to 0:
+         *        Solution         9.8517e-01   3.3864e-05   1.4794e-02
+                  Sensitivity 1   -3.5595e-01   3.9025e-04   3.5556e-01
+                  Sensitivity 2    9.5426e-08  -2.1310e-10  -9.5213e-08
+                  Sensitivity 3   -1.5832e-11  -5.2900e-13   1.6361e-11
+
+            when set to 1:
+
+                  Solution         9.8517e-01   3.3864e-05   1.4794e-02
+                  Sensitivity 1    8.8124e-01   1.3900e-04   2.1186e+00
+                  Sensitivity 2    1.2372e+00  -2.5126e-04   1.7631e+00
+                  Sensitivity 3    1.2372e+00  -2.5126e-04   1.7631e+00
+
+            sensitivity initial conditions matter!
+
+            their example, with jac and fS provided:
+
+            4.000e-01  3  4.881e-02   115
+                  Solution         9.8517e-01   3.3864e-05   1.4794e-02
+                  Sensitivity 1   -3.5595e-01   3.9025e-04   3.5556e-01
+                  Sensitivity 2    9.5431e-08  -2.1309e-10  -9.5218e-08
+                  Sensitivity 3   -1.5833e-11  -5.2900e-13   1.6362e-11
+
+             What this means is that this example is correctly using the finite
+             difference approx.
+         */
 
 
         /* Call CVodeSensInit1 to activate forward sensitivity computations
@@ -281,7 +310,9 @@ int main(int argc, char *argv[]) {
     printf("============================\n");
 
     for (iout = 1, tout = T1; iout <= NOUT; iout++, tout *= TMULT) {
+//    for (iout = 1, tout = T1; iout <= NOUT; iout++, tout += STEP) {
 
+        printf("Calling CVode for step %f to %f\n", tout, tout+STEP);
         retval = CVode(cvode_mem, tout, y, &t, CV_NORMAL);
         if (check_retval(&retval, "CVode", 1)) break;
 
@@ -597,63 +628,10 @@ static void PrintOutputS(N_Vector *uS) {
  * Print some final statistics from the CVODES memory.
  */
 
-static void PrintFinalStats(void *cvode_mem, booleantype sensi) {
-    long int nst;
-    long int nfe, nsetups, nni, ncfn, netf;
-    long int nfSe, nfeS, nsetupsS, nniS, ncfnS, netfS;
-    long int nje, nfeLS;
-    int retval;
 
-    retval = CVodeGetNumSteps(cvode_mem, &nst);
-    check_retval(&retval, "CVodeGetNumSteps", 1);
-    retval = CVodeGetNumRhsEvals(cvode_mem, &nfe);
-    check_retval(&retval, "CVodeGetNumRhsEvals", 1);
-    retval = CVodeGetNumLinSolvSetups(cvode_mem, &nsetups);
-    check_retval(&retval, "CVodeGetNumLinSolvSetups", 1);
-    retval = CVodeGetNumErrTestFails(cvode_mem, &netf);
-    check_retval(&retval, "CVodeGetNumErrTestFails", 1);
-    retval = CVodeGetNumNonlinSolvIters(cvode_mem, &nni);
-    check_retval(&retval, "CVodeGetNumNonlinSolvIters", 1);
-    retval = CVodeGetNumNonlinSolvConvFails(cvode_mem, &ncfn);
-    check_retval(&retval, "CVodeGetNumNonlinSolvConvFails", 1);
 
-    if (sensi) {
-        retval = CVodeGetSensNumRhsEvals(cvode_mem, &nfSe);
-        check_retval(&retval, "CVodeGetSensNumRhsEvals", 1);
-        retval = CVodeGetNumRhsEvalsSens(cvode_mem, &nfeS);
-        check_retval(&retval, "CVodeGetNumRhsEvalsSens", 1);
-        retval = CVodeGetSensNumLinSolvSetups(cvode_mem, &nsetupsS);
-        check_retval(&retval, "CVodeGetSensNumLinSolvSetups", 1);
-        retval = CVodeGetSensNumErrTestFails(cvode_mem, &netfS);
-        check_retval(&retval, "CVodeGetSensNumErrTestFails", 1);
-        retval = CVodeGetSensNumNonlinSolvIters(cvode_mem, &nniS);
-        check_retval(&retval, "CVodeGetSensNumNonlinSolvIters", 1);
-        retval = CVodeGetSensNumNonlinSolvConvFails(cvode_mem, &ncfnS);
-        check_retval(&retval, "CVodeGetSensNumNonlinSolvConvFails", 1);
-    }
 
-    retval = CVodeGetNumJacEvals(cvode_mem, &nje);
-    check_retval(&retval, "CVodeGetNumJacEvals", 1);
-    retval = CVodeGetNumLinRhsEvals(cvode_mem, &nfeLS);
-    check_retval(&retval, "CVodeGetNumLinRhsEvals", 1);
 
-    printf("\nFinal Statistics\n\n");
-    printf("nst     = %5ld\n\n", nst);
-    printf("nfe     = %5ld\n", nfe);
-    printf("netf    = %5ld    nsetups  = %5ld\n", netf, nsetups);
-    printf("nni     = %5ld    ncfn     = %5ld\n", nni, ncfn);
-
-    if (sensi) {
-        printf("\n");
-        printf("nfSe    = %5ld    nfeS     = %5ld\n", nfSe, nfeS);
-        printf("netfs   = %5ld    nsetupsS = %5ld\n", netfS, nsetupsS);
-        printf("nniS    = %5ld    ncfnS    = %5ld\n", nniS, ncfnS);
-    }
-
-    printf("\n");
-    printf("nje    = %5ld    nfeLS     = %5ld\n", nje, nfeLS);
-
-}
 
 
 /**
@@ -758,3 +736,100 @@ nje    =    24    nfeLS     =     0
 Process finished with exit code 0
 
  */
+
+
+
+
+
+
+
+
+
+/*
+ * Calling CVode for step 0.400000 to 4.000000
+Calling user supplied f function, ODE rhs for the first time
+Calling "cvSensRhsWrapper" for first time
+Computing all sens at once, not one parameter at a time for time 0.000000
+calling: cvSensRhsInternalDQ
+Time t=0.000000
+N_vector y:
+                  1
+                  0
+                  0
+
+N_vector ydot:
+              -0.04
+               0.04
+                  0
+
+isth 0 N_vector yS before computation:
+                  0
+                  0
+                  0
+
+isth 0 N_vector ySdot before computation:
+                  0
+                  0
+                  0
+
+inside: cvSensRhs1InternalDQ
+1
+                  0
+                  0
+                  0
+
+2
+                  0
+                  0
+                  0
+
+3
+                  0
+                  0
+                  0
+
+4
+           -0.04004
+            0.04004
+                  0
+
+5
+           -0.04004
+            0.04004
+                  0
+
+6
+           -0.04004
+            0.04004
+                  0
+
+7
+           -0.04004
+            0.04004
+                  0
+
+8
+           -0.04004
+            0.04004
+                  0
+
+9
+-0.9999999999999591
+ 0.9999999999999591
+                  0
+
+end
+-0.9999999999999591
+ 0.9999999999999591
+                  0
+ */
+
+
+
+
+
+
+
+
+
+

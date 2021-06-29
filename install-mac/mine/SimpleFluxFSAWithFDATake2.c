@@ -6,7 +6,6 @@
 #include "sunnonlinsol/sunnonlinsol_newton.h"     /* access to the newton SUNNonlinearSolver      */
 #include "helpers.h"
 
-
 /**
  * Integrate, with sensitivities the following model:
  *
@@ -122,9 +121,16 @@ int main() {
 
     UserData userData ;
     userData = (UserData) malloc(sizeof* userData);
+    int is;
+    int plist[NP] = {0, 1, 2};
+    double pbar[NP] = {Kin, Kf, Kout};
+    userData->p[0] = Kin;
+    userData->p[1] = Kf;
+    userData->p[2] =  Kout;
 
     // sensitivity method
-    int sensi_meth = CV_SIMULTANEOUS;
+//    int sensi_meth = CV_SIMULTANEOUS;
+    int sensi_meth = CV_STAGGERED;
 
     if (fixed_point && newton) {
         printf("Can't have both fixed point and newton at the same time", stderr);
@@ -187,15 +193,10 @@ int main() {
 //    retval = CVodeSetJacFn(cvode_mem, NULL);
 //    CheckRetValNotNegative(&retval, "CVodeSetJacFn");
 
-    int is;
-    int plist[NP] = {0, 1, 2};
-    double pbar[NP] = {Kin, Kf, Kout};
-    userData->p[0] = Kin;
-    userData->p[1] = Kf;
-    userData->p[2] =  Kout;
+
 
     /**
-     * y = state vector. shape = (num eqns)
+     * y = state vector. shape = (1 x num eqns)
      * yS = shape (num parameters x num eqns)
      *
      */
@@ -216,7 +217,7 @@ int main() {
         printf("Initial yS:\n");
         PrintVectorArray(yS, NS, NEQ);
 
-        retval = CVodeSensInit1(cvode_mem, NS, sensi_meth, fS, yS);
+        retval = CVodeSensInit(cvode_mem, NS, sensi_meth, NULL, yS);
 
         retval = CVodeSensEEtolerances(cvode_mem);
         CheckRetValNotNegative(&retval, "CVodeSensEEtolerances");
@@ -224,10 +225,10 @@ int main() {
         retval = CVodeSetSensErrCon(cvode_mem, err_con);
         CheckRetValNotNegative(&retval, "CVodeSetSensErrCon");
 
-        retval = CVodeSetSensDQMethod(cvode_mem, CV_CENTERED, 0);
+        retval = CVodeSetSensDQMethod(cvode_mem, CV_FORWARD, 1);
         CheckRetValNotNegative(&retval, "CVodeSetSensDQMethod");
 
-        retval = CVodeSetSensParams(cvode_mem, userData->p, NULL, NULL);
+        retval = CVodeSetSensParams(cvode_mem, userData->p, pbar, plist);
         CheckRetValNotNegative(&retval, "CVodeSetSensParams");
 
         SUNNonlinSol_NewtonSens(NS, y);

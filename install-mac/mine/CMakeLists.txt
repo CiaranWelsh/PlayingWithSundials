@@ -35,3 +35,27 @@ set(tgt CWVenkatramanFSAWithFiniteDifferenceApprox)
 add_executable(${tgt} VenkatramanFSAWithFiniteDifferenceApprox.c)
 target_link_libraries(${tgt} PRIVATE ${SUNDIALS_LIBRARIES})
 target_include_directories(${tgt} PRIVATE ${SUNDIALS_INCLUDE_DIRS})
+
+set(tgt CWVenkatramanAdjointWithFiniteDifferenceApprox)
+add_executable(${tgt} VenkatramanAdjointWithFiniteDifferenceApprox.c)
+target_link_libraries(${tgt} PRIVATE ${SUNDIALS_LIBRARIES})
+target_include_directories(${tgt} PRIVATE ${SUNDIALS_INCLUDE_DIRS})
+
+set(tgt CWSimpleFluxFSAWithFDATake2)
+add_executable(${tgt} SimpleFluxFSAWithFDATake2.c)
+target_link_libraries(${tgt} PRIVATE ${SUNDIALS_LIBRARIES})
+target_include_directories(${tgt} PRIVATE ${SUNDIALS_INCLUDE_DIRS})
+
+
+
+
+
+
+
+
+
+
+
+
+
+

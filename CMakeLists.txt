@@ -285,6 +285,8 @@ else()
   endif()
 endif()
 
+add_compile_definitions("SUNDIALS_EXTENDED_PRECISION=ON")
+
 set(CMAKE_C_FLAGS_ASAN
         "${CMAKE_C_FLAGS_DEBUG} -fsanitize=address -fno-omit-frame-pointer" CACHE STRING
         "Flags used by the C compiler for Asan build type or configuration." FORCE)

@@ -55,7 +55,7 @@ static void PrintVectorArray(N_Vector *nVectorArray, int nrow, int ncol) {
     for (int i=0; i<nrow; i++){
         sdata = N_VGetArrayPointer(nVectorArray[i]);
         for (int j=0; j<ncol; j++){
-            printf("%f\t", sdata[j]);
+            printf("%.10f\t", sdata[j]);
         }
         printf("\n");
     }
@@ -65,7 +65,7 @@ static void setSensInitTo(N_Vector* nVectorArray, int numParamsYouWantSensFor, i
     for (int is = 0; is < numParamsYouWantSensFor ; is++) {
         double *data = nVectorArray[0]->ops->nvgetarraypointer(nVectorArray[is]);
         // then over num model species
-        for (int species=0; species < numModelVariables+1; species++){
+        for (int species=0; species < numModelVariables; species++){
             // set sens init to 0.
             data[species] = value;
         }

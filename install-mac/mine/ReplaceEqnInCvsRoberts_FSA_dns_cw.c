@@ -1,55 +1,3 @@
-/* -----------------------------------------------------------------
- * Programmer(s): Scott D. Cohen, Alan C. Hindmarsh, and
- *                Radu Serban @ LLNL
- * -----------------------------------------------------------------
- * SUNDIALS Copyright Start
- * Copyright (c) 2002-2021, Lawrence Livermore National Security
- * and Southern Methodist University.
- * All rights reserved.
- *
- * See the top-level LICENSE and NOTICE files for details.
- *
- * SPDX-License-Identifier: BSD-3-Clause
- * SUNDIALS Copyright End
- * -----------------------------------------------------------------
- * Example problem:
- *
- * The following is a simple example problem, with the coding
- * needed for its solution by CVODES for Forward Sensitivity 
- * Analysis. The problem is from chemical kinetics, and consists
- * of the following three rate equations:
- *    dy1/dt = -p1*y1 + p2*y2*y3
- *    dy2/dt =  p1*y1 - p2*y2*y3 - p3*(y2)^2
- *    dy3/dt =  p3*(y2)^2
- * on the interval from t = 0.0 to t = 4.e10, with initial
- * conditions y1 = 1.0, y2 = y3 = 0. The reaction rates are: p1=0.04,
- * p2=1e4, and p3=3e7. The problem is stiff.
- * This program solves the problem with the BDF method, Newton
- * iteration with the DENSE linear solver, and a
- * user-supplied Jacobian routine.
- * It uses a scalar relative tolerance and a vector absolute
- * tolerance.
- * Output is printed in decades from t = .4 to t = 4.e10.
- * Run statistics (optional outputs) are printed at the end.
- *
- * Optionally, CVODES can compute sensitivities with respect to the
- * problem parameters p1, p2, and p3.
- * The sensitivity right hand side is given analytically through the
- * user routine fS (of type SensRhs1Fn).
- * Any of three sensitivity methods (SIMULTANEOUS, STAGGERED, and
- * STAGGERED1) can be used and sensitivities may be included in the
- * error test or not (error control set on SUNTRUE or SUNFALSE,
- * respectively).
- *
- * Execution:
- *
- * If no sensitivities are desired:
- *    % cvsRoberts_FSA_dns -nosensi
- * If sensitivities are to be computed:
- *    % cvsRoberts_FSA_dns -sensi sensi_meth err_con
- * where sensi_meth is one of {sim, stg, stg1} and err_con is one of
- * {t, f}.
- * -----------------------------------------------------------------*/
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -71,7 +19,7 @@
 /* Problem Constants */
 #define NEQ 4 // num equations.
 #define NP 10 // num parameters in the model
-#define NS 1  // Number of parameters we want sensitivities for
+#define NS NP  // Number of parameters we want sensitivities for
 
 #define ATOL  RCONST(1.e-5) /* scalar absolute tolerance */
 #define T0    RCONST(0.0)   /* initial time              */
@@ -79,23 +27,30 @@
 #define DTOUT RCONST(0.5)   /* output time increment     */
 #define NOUT  10            /* number of output times    */
 #define TMULT 10            /* output time factor */
+#define STEP  1
 
 #define RTOL  RCONST(1e-4)  /* scalar relative tolerance */
+
+// used in error weight fn, which isn't being used right now
 #define ATOL1 RCONST(1e-8)  /* vector absolute tolerance components */
-#define ATOL2 RCONST(1e-14)
+#define ATOL2 RCONST(1e-7)
 #define ATOL3 RCONST(1e-6)
 #define ATOL4 RCONST(1e-6)
 
-#define keff1    0.0017
-#define keff2    1
-#define keff3    0.03
-#define n        3
-#define u1        0.0001
-#define u3        0.0001
-#define u2        0.001
-#define u4        0.001
-#define alpha1    9e-5
-#define alpha2    0.001
+//#define keff1    0.0017    // param 0
+//#define keff1    0.006829    // param 0
+#define keff1    0.001717    // param 0
+
+
+#define keff2    1         // param 1
+#define keff3    0.03      // param 2
+#define n        3         // param 3
+#define u1        0.0001   // param 4
+#define u3        0.0001   // param 5
+#define u2        0.001    // param 6
+#define u4        0.001    // param 7
+#define alpha1    9e-5     // param 8
+#define alpha2    0.001    // param 9
 
 
 #define scUPA0    1.16213e-8
@@ -103,11 +58,13 @@
 #define PLS0    19.7847
 #define tcUPA0    19.9809
 
+#define SUNDIALS_EXTENDED_PRECISION
+
 
 /* Type : UserData */
 
 typedef struct {
-    realtype p[NEQ];           /* problem parameters */
+    realtype p[NS];           /* problem parameters */
 } *UserData;
 
 /* Prototypes of functions by CVODES */
@@ -132,6 +89,7 @@ int main(int argc, char *argv[]) {
     int iout, retval;
 
     realtype pbar[NS];
+    int plist[NS];
     int is;
     N_Vector *yS;
     booleantype sensi, err_con;
@@ -144,21 +102,29 @@ int main(int argc, char *argv[]) {
     A = NULL;
     LS = NULL;
 
-    sensi = 1;
+    sensi = 0;
 
     /* Process arguments */
 //  ProcessArgs(argc, argv, &sensi, &sensi_meth, &err_con);
-    sensi_meth = CV_SIMULTANEOUS;
-//    sensi_meth = CV_STAGGERED;
-    err_con = 1;
-//    err_con = 0;
+//    sensi_meth = CV_SIMULTANEOUS;
+    sensi_meth = CV_STAGGERED;
+//    err_con = 1;
+    err_con = 0;
 
     /* User data structure */
     data = (UserData) malloc(sizeof *data);
     if (check_retval((void *) data, "malloc", 2)) return (1);
-    data->p[0] = RCONST(0.04);
-    data->p[1] = RCONST(1.0e4);
-    data->p[2] = RCONST(3.0e7);
+    // fill the parameters in the user data struct
+    data->p[0] = keff1;
+    data->p[1] = keff2;
+    data->p[2] = keff3;
+    data->p[3] = n;
+    data->p[4] = u1;
+    data->p[5] = u3;
+    data->p[6] = u2;
+    data->p[7] = u4;
+    data->p[8] = alpha1;
+    data->p[9] = alpha2;
 
     /* Initial conditions */
     y = N_VNew_Serial(NEQ);
@@ -183,7 +149,7 @@ int main(int argc, char *argv[]) {
     /* Use private function to compute error weights */
 //  retval = CVodeWFtolerances(cvode_mem, ewt);
 //  if (check_retval(&retval, "CVodeSetEwtFn", 1)) return(1);
-    retval = CVodeSStolerances(cvode_mem, 1e-6, 1e-12);
+    retval = CVodeSStolerances(cvode_mem, 1e-4, 1e-5);
     if (check_retval(&retval, "CVodeSStolerances", 1)) return (1);
 
     /* Attach user data */
@@ -210,20 +176,30 @@ int main(int argc, char *argv[]) {
     retval = CVodeSetMaxNumSteps(cvode_mem, (long)1e8);
     if (check_retval(&retval, "CVodeSetMaxNumSteps", 1)) return (1);
 
-    printf("\n3-species chemical kinetics problem\n");
 
     /* Sensitivity-related settings */
     if (sensi) {
 
         /* Set parameter scaling factor */
+        int which = 1; // index of parameter for sensitivities
         pbar[0] = data->p[0];
-//        pbar[1] = data->p[1];
-//        pbar[2] = data->p[2];
+        pbar[1] = data->p[1];
+        pbar[2] = data->p[2];
+        pbar[3] = data->p[3];
+        pbar[4] = data->p[4];
+        pbar[5] = data->p[5];
+        pbar[6] = data->p[6];
+        pbar[7] = data->p[7];
+        pbar[8] = data->p[8];
+        pbar[9] = data->p[9];
+
+        for (int i=0; i<10; i++) plist[i] = i;
 
         /* Set sensitivity initial conditions */
         yS = N_VCloneVectorArray(NS, y);
         if (check_retval((void *) yS, "N_VCloneVectorArray", 0)) return (1);
-//        for (is = 0; is < NS; is++) N_VConst(ZERO, yS[is]);
+
+        /* sets all sensitivity initial conditions to value */
         setSensInitTo(yS, NS, NEQ, 0.0);
 
 
@@ -252,12 +228,13 @@ int main(int argc, char *argv[]) {
 
         /* Call CVodeSetSensParams to specify problem parameter information for
            sensitivity calculations */
-        retval = CVodeSetSensParams(cvode_mem, data->p, pbar, NULL);
+        retval = CVodeSetSensParams(cvode_mem, data->p, pbar, plist);
         if (check_retval(&retval, "CVodeSetSensParams", 1)) return (1);
 
         printf("Sensitivity: YES ");
-        if (sensi_meth == CV_SIMULTANEOUS)
-            printf("( SIMULTANEOUS +");
+        if (sensi_meth == CV_SIMULTANEOUS){
+                printf(" (SIMULTANEOUS +\n");
+        }
         else if (sensi_meth == CV_STAGGERED) printf("( STAGGERED +");
         else printf("( STAGGERED1 +");
         if (err_con) printf(" FULL ERROR CONTROL )");
@@ -273,21 +250,22 @@ int main(int argc, char *argv[]) {
 
     printf("\n\n");
 
-    for (iout = 1, tout = T1; iout <= NOUT; iout++, tout *= TMULT) {
+//    for (iout = 1, tout = T1; iout <= NOUT; iout++, tout *= TMULT) {
+    for (iout = 1, tout = T1; iout <= NOUT; iout++, tout += STEP) {
 
         retval = CVode(cvode_mem, tout, y, &t, CV_NORMAL);
         if (check_retval(&retval, "CVode", 1)) break;
 
-        printf("t=%f\n", t);
+        printf("\t\tt=%f\n", t);
 
-        PrintVectorArray(&y, 1, 4);
+        PrintVectorArray(&y, 1, NEQ); // y is a 1xNEQ matrix or column vector
 
         /* Call CVodeGetSens to get the sensitivity solution vector after a
            successful return from CVode */
         if (sensi) {
             retval = CVodeGetSens(cvode_mem, &t, yS);
             if (check_retval(&retval, "CVodeGetSens", 1)) break;
-            PrintVectorArray(yS, 1, 4);
+            PrintVectorArray(yS, NS, NEQ);
         }
 
     }
@@ -473,105 +451,81 @@ static int ewt(N_Vector y, N_Vector w, void *user_data) {
  */
 
 
+
 /**
+ * Solution with keff1 = 0.0016829, i.e. theta - delta theta:
  *
- *
+ * Sensitivity: NO
 
- This is outoput of the program when the rhs of the sensitivity equations are provided
- (i.e. not what we're aiming for in this program)
-3-species chemical kinetics problem
-Sensitivity: YES ( SIMULTANEOUS + FULL ERROR CONTROL )
-
-=======================================================================
-     T     Q       H      NST           y1           y2           y3
-=======================================================================
-4.000e-01  3  4.881e-02   115
-                  Solution         9.8517e-01   3.3864e-05   1.4794e-02
-                  Sensitivity 1   -3.5595e-01   3.9025e-04   3.5556e-01
-                  Sensitivity 2    9.5431e-08  -2.1309e-10  -9.5218e-08
-                  Sensitivity 3   -1.5833e-11  -5.2900e-13   1.6362e-11
------------------------------------------------------------------------
-4.000e+00  5  2.363e-01   138
-                  Solution         9.0552e-01   2.2405e-05   9.4459e-02
-                  Sensitivity 1   -1.8761e+00   1.7922e-04   1.8759e+00
-                  Sensitivity 2    2.9614e-06  -5.8305e-10  -2.9608e-06
-                  Sensitivity 3   -4.9334e-10  -2.7626e-13   4.9362e-10
------------------------------------------------------------------------
-4.000e+01  3  1.485e+00   219
-                  Solution         7.1583e-01   9.1856e-06   2.8416e-01
-                  Sensitivity 1   -4.2475e+00   4.5913e-05   4.2475e+00
-                  Sensitivity 2    1.3731e-05  -2.3573e-10  -1.3730e-05
-                  Sensitivity 3   -2.2883e-09  -1.1380e-13   2.2884e-09
------------------------------------------------------------------------
-4.000e+02  3  8.882e+00   331
-                  Solution         4.5052e-01   3.2229e-06   5.4947e-01
-                  Sensitivity 1   -5.9584e+00   3.5431e-06   5.9584e+00
-                  Sensitivity 2    2.2738e-05  -2.2605e-11  -2.2738e-05
-                  Sensitivity 3   -3.7896e-09  -4.9948e-14   3.7897e-09
------------------------------------------------------------------------
-4.000e+03  3  1.219e+02   490
-                  Solution         1.8318e-01   8.9413e-07   8.1682e-01
-                  Sensitivity 1   -4.7500e+00  -5.9948e-06   4.7500e+00
-                  Sensitivity 2    1.8809e-05   2.3132e-11  -1.8809e-05
-                  Sensitivity 3   -3.1348e-09  -1.8757e-14   3.1348e-09
------------------------------------------------------------------------
-4.000e+04  3  2.776e+03   598
-                  Solution         3.8980e-02   1.6216e-07   9.6102e-01
-                  Sensitivity 1   -1.5749e+00  -2.7620e-06   1.5749e+00
-                  Sensitivity 2    6.2872e-06   1.1003e-11  -6.2872e-06
-                  Sensitivity 3   -1.0479e-09  -4.5364e-15   1.0479e-09
------------------------------------------------------------------------
-4.000e+05  3  1.398e+04   665
-                  Solution         4.9394e-03   1.9854e-08   9.9506e-01
-                  Sensitivity 1   -2.3639e-01  -4.5856e-07   2.3639e-01
-                  Sensitivity 2    9.4527e-07   1.8331e-12  -9.4527e-07
-                  Sensitivity 3   -1.5753e-10  -6.3637e-16   1.5753e-10
------------------------------------------------------------------------
-4.000e+06  4  1.903e+05   716
-                  Solution         5.1680e-04   2.0682e-09   9.9948e-01
-                  Sensitivity 1   -2.5664e-02  -5.1053e-08   2.5664e-02
-                  Sensitivity 2    1.0265e-07   2.0419e-13  -1.0265e-07
-                  Sensitivity 3   -1.7109e-11  -6.8507e-17   1.7109e-11
------------------------------------------------------------------------
-4.000e+07  4  2.829e+06   771
-                  Solution         5.2026e-05   2.0812e-10   9.9995e-01
-                  Sensitivity 1   -2.5988e-03  -5.1935e-09   2.5988e-03
-                  Sensitivity 2    1.0395e-08   2.0774e-14  -1.0395e-08
-                  Sensitivity 3   -1.7326e-12  -6.9311e-18   1.7326e-12
------------------------------------------------------------------------
-4.000e+08  3  2.036e+07   816
-                  Solution         5.1952e-06   2.0781e-11   9.9999e-01
-                  Sensitivity 1   -2.6010e-04  -5.2113e-10   2.6010e-04
-                  Sensitivity 2    1.0404e-09   2.0845e-15  -1.0404e-09
-                  Sensitivity 3   -1.7315e-13  -6.9262e-19   1.7315e-13
------------------------------------------------------------------------
-4.000e+09  3  4.107e+08   849
-                  Solution         5.1788e-07   2.0715e-12   1.0000e+00
-                  Sensitivity 1   -2.5993e-05  -5.2215e-11   2.5993e-05
-                  Sensitivity 2    1.0397e-10   2.0886e-16  -1.0397e-10
-                  Sensitivity 3   -1.7262e-14  -6.9049e-20   1.7262e-14
------------------------------------------------------------------------
-4.000e+10  2  5.788e+09   878
-                  Solution         5.0813e-08   2.0325e-13   1.0000e+00
-                  Sensitivity 1   -2.4876e-06  -4.8465e-12   2.4876e-06
-                  Sensitivity 2    9.9502e-12   1.9386e-17  -9.9502e-12
-                  Sensitivity 3   -1.6938e-15  -6.7751e-21   1.6938e-15
------------------------------------------------------------------------
+		t=0.500000
+0.0000000116	0.0199012863	19.7816748144	19.9799459792
+		t=1.500000
+0.0000000116	0.0116357950	19.7711481278	19.9780380800
+		t=2.500000
+0.0000000117	0.0071386582	19.7568718687	19.9761303716
+		t=3.500000
+0.0000000117	0.0046789354	19.7405769598	19.9742228539
+		t=4.500000
+0.0000000117	0.0033235157	19.7231964932	19.9723155269
+		t=5.500000
+0.0000000118	0.0025792079	19.7052236411	19.9704083907
+		t=6.500000
+0.0000000118	0.0021692445	19.6869351525	19.9685014452
+		t=7.500000
+0.0000000118	0.0019413777	19.6684832563	19.9665946904
+		t=8.500000
+0.0000000119	0.0018131983	19.6499503432	19.9646881262
+		t=9.500000
+0.0000000119	0.0017285186	19.6313925821	19.9627817527
 
 Final Statistics
 
-nst     =   878
+nst     =    25
 
-nfe     =  1231
-netf    =    30    nsetups  =   148
-nni     =  1228    ncfn     =     4
+nfe     =    39
+netf    =     2    nsetups  =    10
+nni     =    36    ncfn     =     0
 
-nfSe    =  3693    nfeS     =     0
-netfs   =     0    nsetupsS =     0
-nniS    =     0    ncfnS    =     0
+nje    =     1    nfeLS     =     4
 
-nje    =    24    nfeLS     =     0
 
-Process finished with exit code 0
+  * Solution with keff1 = 0.001717, i.e. theta - delta theta:
+
+
+		t=0.500000
+0.0000000116	0.0199012863	19.7816748144	19.9799459792
+		t=1.500000
+0.0000000116	0.0116357950	19.7711481278	19.9780380800
+		t=2.500000
+0.0000000117	0.0071386582	19.7568718687	19.9761303716
+		t=3.500000
+0.0000000117	0.0046789354	19.7405769598	19.9742228539
+		t=4.500000
+0.0000000117	0.0033235157	19.7231964932	19.9723155269
+		t=5.500000
+0.0000000118	0.0025792079	19.7052236411	19.9704083907
+		t=6.500000
+0.0000000118	0.0021692445	19.6869351525	19.9685014452
+		t=7.500000
+0.0000000118	0.0019413777	19.6684832563	19.9665946904
+		t=8.500000
+0.0000000119	0.0018131983	19.6499503432	19.9646881262
+		t=9.500000
+0.0000000119	0.0017285186	19.6313925821	19.9627817527
+
+Final Statistics
+
+nst     =    25
+
+nfe     =    39
+netf    =     2    nsetups  =    10
+nni     =    36    ncfn     =     0
+
+nje    =     1    nfeLS     =     4
+
+
+
+
+
 
  */
